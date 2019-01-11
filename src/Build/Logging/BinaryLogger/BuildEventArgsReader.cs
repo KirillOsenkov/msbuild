@@ -42,10 +42,16 @@ namespace Microsoft.Build.Logging
         /// </summary>
         internal event Action<BinaryLogRecordKind, byte[]> OnBlobRead;
 
-        /// <summary>
-        /// Reads the next log record from the binary reader. If there are no more records, returns null.
-        /// </summary>
+
         public BuildEventArgs Read()
+        {
+            return Read(DateTime.MinValue);
+        }
+
+            /// <summary>
+            /// Reads the next log record from the binary reader. If there are no more records, returns null.
+            /// </summary>
+        public BuildEventArgs Read(DateTime time)
         {
             BinaryLogRecordKind recordKind = (BinaryLogRecordKind)ReadInt32();
 
@@ -114,6 +120,11 @@ namespace Microsoft.Build.Logging
                     break;
                 default:
                     break;
+            }
+
+            if (time != DateTime.MinValue)
+            {
+                buildEventArgsFieldTimestamp.SetValue(result, time);
             }
 
             return result;
@@ -812,7 +823,7 @@ namespace Microsoft.Build.Logging
             return binaryReader.ReadBoolean();
         }
 
-        private DateTime ReadDateTime()
+        internal DateTime ReadDateTime()
         {
             return new DateTime(binaryReader.ReadInt64(), (DateTimeKind)ReadInt32());
         }

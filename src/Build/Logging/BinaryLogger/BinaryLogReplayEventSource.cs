@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Threading;
+using System.Linq;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Shared;
 
@@ -45,7 +47,57 @@ namespace Microsoft.Build.Logging
                     throw new NotSupportedException(text);
                 }
 
-                var reader = new BuildEventArgsReader(binaryReader, fileFormatVersion);
+                bool split = binaryReader.ReadBoolean();
+
+                if (split)
+                {
+                    bool isMaster = binaryReader.ReadBoolean();
+                    if (!isMaster)
+                    {
+                        throw new Exception("not the master node");
+                    }
+
+                    sourceFilePath = Path.GetFullPath(sourceFilePath);
+                    var files = BinaryLogger.GetFiles(sourceFilePath);
+                    var readers = new List<Record>();
+                    
+                    var reader = new BuildEventArgsReader(binaryReader, fileFormatVersion);
+                    var time = reader.ReadDateTime();
+
+                    readers.Add(new Record(time, reader));
+
+                    foreach (var binlog in files)
+                    {
+                        var stream2 = new FileStream(binlog, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        var gzipStream2 = new GZipStream(stream2, CompressionMode.Decompress, leaveOpen: true);
+                        var binaryreader2 = new BinaryReader(gzipStream2);
+
+                        var reader2 = new BuildEventArgsReader(binaryreader2, fileFormatVersion);
+                        var time2 = reader2.ReadDateTime();
+                        readers.Add(new Record(time2, reader2));
+                    }
+
+                    while (readers.Count > 0)
+                    {
+                        Record first = readers[0];
+
+                        for (int i = 1; i < readers.Count; i++)
+                        {
+                            if (readers[i].Time < first.Time)
+                            {
+                                first = readers[i];
+                            }
+                        }
+
+                        BuildEventArgs instance = null;
+                        instance = first.Reader.Read(time);
+                        
+                        Dispatch(instance);
+
+                        first.Time = first.Reader.ReadDateTime();
+                    }
+                }
+
                 while (true)
                 {
                     if (cancellationToken.IsCancellationRequested)
@@ -54,7 +106,7 @@ namespace Microsoft.Build.Logging
                     }
 
                     BuildEventArgs instance = null;
-
+                    var reader = new BuildEventArgsReader(binaryReader, fileFormatVersion);
                     instance = reader.Read();
                     if (instance == null)
                     {
@@ -63,6 +115,18 @@ namespace Microsoft.Build.Logging
 
                     Dispatch(instance);
                 }
+            }
+        }
+
+        private struct Record
+        {
+            public DateTime Time { get; set; }
+            public BuildEventArgsReader Reader { get; set; }
+
+            public Record(DateTime time, BuildEventArgsReader reader) : this()
+            {
+                Time = time;
+                Reader = reader;
             }
         }
     }

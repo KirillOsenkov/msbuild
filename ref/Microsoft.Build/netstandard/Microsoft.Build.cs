@@ -1492,13 +1492,18 @@ namespace Microsoft.Build.Graph
 }
 namespace Microsoft.Build.Logging
 {
-    public sealed partial class BinaryLogger : Microsoft.Build.Framework.ILogger
+    public sealed partial class BinaryLogger : Microsoft.Build.Framework.IForwardingLogger, Microsoft.Build.Framework.ILogger, Microsoft.Build.Framework.INodeLogger
     {
         public BinaryLogger() { }
+        public Microsoft.Build.Framework.IEventRedirector BuildEventRedirector { get { throw null; } set { } }
         public Microsoft.Build.Logging.BinaryLogger.ProjectImportsCollectionMode CollectProjectImports { get { throw null; } set { } }
+        public int NodeId { get { throw null; } set { } }
         public string Parameters { get { throw null; } set { } }
         public Microsoft.Build.Framework.LoggerVerbosity Verbosity { get { throw null; } set { } }
+        public static string GetFilePathForNode(string filePath, int nodeId) { throw null; }
+        public static string[] GetFiles(string masterFilePath) { throw null; }
         public void Initialize(Microsoft.Build.Framework.IEventSource eventSource) { }
+        public void Initialize(Microsoft.Build.Framework.IEventSource eventSource, int nodeCount) { }
         public void Shutdown() { }
         public enum ProjectImportsCollectionMode
         {
@@ -1517,6 +1522,7 @@ namespace Microsoft.Build.Logging
     {
         public BuildEventArgsReader(System.IO.BinaryReader binaryReader, int fileFormatVersion) { }
         public Microsoft.Build.Framework.BuildEventArgs Read() { throw null; }
+        public Microsoft.Build.Framework.BuildEventArgs Read(System.DateTime time) { throw null; }
     }
     public delegate void ColorResetter();
     public delegate void ColorSetter(System.ConsoleColor color);

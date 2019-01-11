@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Shared;
 using Microsoft.Build.Shared.FileSystem;
@@ -15,7 +17,7 @@ namespace Microsoft.Build.Logging
     /// text logs that erase a lot of useful information.
     /// </summary>
     /// <remarks>The logger is public so that it can be instantiated from MSBuild.exe via command-line switch.</remarks>
-    public sealed class BinaryLogger : ILogger
+    public sealed class BinaryLogger : INodeLogger, IForwardingLogger
     {
         // version 2: 
         //   - new BuildEventContext.EvaluationId
@@ -31,7 +33,8 @@ namespace Microsoft.Build.Logging
         //   -  Ids and parent ids for the evaluation locations
         // version 7:
         //   -  Include ProjectStartedEventArgs.GlobalProperties
-        internal const int FileFormatVersion = 7;
+        // todo document
+        internal const int FileFormatVersion = 8;
 
         private Stream stream;
         private BinaryWriter binaryWriter;
@@ -80,10 +83,22 @@ namespace Microsoft.Build.Logging
         /// </summary>
         public string Parameters { get; set; }
 
+        public static string GetFilePathForNode(string filePath, int nodeId)
+        {
+            return nodeId == 0
+                ? $"{Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath))}.binlog"
+                : $"{Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath))}.{nodeId}.binlog";
+        }
+
+        public static string[] GetFiles(string masterFilePath)
+        {
+            return Directory.GetFiles(Path.GetDirectoryName(masterFilePath), $"{Path.GetFileNameWithoutExtension(masterFilePath)}.*.binlog");
+        }
+
         /// <summary>
         /// Initializes the logger by subscribing to events of IEventSource
         /// </summary>
-        public void Initialize(IEventSource eventSource)
+        public void Initialize(IEventSource eventSource, int nodeCount)
         {
             _initialTargetOutputLogging = Environment.GetEnvironmentVariable("MSBUILDTARGETOUTPUTLOGGING");
             _initialLogImports = Environment.GetEnvironmentVariable("MSBUILDLOGIMPORTS");
@@ -92,6 +107,13 @@ namespace Microsoft.Build.Logging
             Environment.SetEnvironmentVariable("MSBUILDLOGIMPORTS", "1");
 
             ProcessParameters();
+
+            bool splitLog = false;
+            if (nodeCount > 0)
+            {
+                splitLog = true;
+                FilePath = GetFilePathForNode(FilePath, NodeId);
+            }
 
             try
             {
@@ -133,9 +155,25 @@ namespace Microsoft.Build.Logging
 
             stream = new GZipStream(stream, CompressionLevel.Optimal);
             binaryWriter = new BinaryWriter(stream);
-            eventArgsWriter = new BuildEventArgsWriter(binaryWriter);
+            eventArgsWriter = new BuildEventArgsWriter(binaryWriter, splitLog);
 
             binaryWriter.Write(FileFormatVersion);
+
+            if (splitLog && NodeId == 0)
+            {
+                // multi-proc, we're master node.
+                binaryWriter.Write(true);
+                binaryWriter.Write(true);
+            }
+            else if (splitLog)
+            {
+                binaryWriter.Write(true);
+                binaryWriter.Write(false);
+            }
+            else
+            {
+                binaryWriter.Write(false);
+            }
 
             eventSource.AnyEventRaised += EventSource_AnyEventRaised;
         }
@@ -179,9 +217,22 @@ namespace Microsoft.Build.Logging
             }
         }
 
+        public void Initialize(IEventSource eventSource)
+        {
+            Initialize(eventSource, 1);
+        }
+
         private void EventSource_AnyEventRaised(object sender, BuildEventArgs e)
         {
-            Write(e);
+            // Let the master collect all the files
+            if (NodeId > 0 && e is ProjectImportedEventArgs projectImported)
+            {
+                BuildEventRedirector.ForwardEvent(projectImported);
+            }
+            else
+            {
+                Write(e);
+            }
         }
 
         private void Write(BuildEventArgs e)
@@ -277,5 +328,8 @@ namespace Microsoft.Build.Logging
                 throw new LoggerException(message, e, errorCode, helpKeyword);
             }
         }
+
+        public IEventRedirector BuildEventRedirector { get; set; }
+        public int NodeId { get; set; }
     }
 }

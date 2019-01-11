@@ -2923,7 +2923,7 @@ namespace Microsoft.Build.CommandLine
 
             ProcessFileLoggers(groupedFileLoggerParameters, distributedLoggerRecords, verbosity, cpuCount, loggers);
 
-            ProcessBinaryLogger(binaryLoggerParameters, loggers, ref verbosity);
+            ProcessBinaryLogger(binaryLoggerParameters, loggers, ref verbosity, cpuCount, distributedLoggerRecords);
 
             profilerLogger = ProcessProfileEvaluationSwitch(profileEvaluationParameters, loggers, out enableProfiler);
 
@@ -3012,7 +3012,7 @@ namespace Microsoft.Build.CommandLine
             }
         }
 
-        private static void ProcessBinaryLogger(string[] binaryLoggerParameters, ArrayList loggers, ref LoggerVerbosity verbosity)
+        private static void ProcessBinaryLogger(string[] binaryLoggerParameters, ArrayList loggers, ref LoggerVerbosity verbosity, int cpuCount, List<DistributedLoggerRecord> distributedLoggerRecords)
         {
             if (binaryLoggerParameters == null || binaryLoggerParameters.Length == 0)
             {
@@ -3021,15 +3021,26 @@ namespace Microsoft.Build.CommandLine
 
             string arguments = binaryLoggerParameters[binaryLoggerParameters.Length - 1];
 
-            BinaryLogger logger = new BinaryLogger();
-            logger.Parameters = arguments;
+            BinaryLogger logger = new BinaryLogger {Parameters = arguments};
 
             // If we have a binary logger, force verbosity to diagnostic.
             // The only place where verbosity is used downstream is to determine whether to log task inputs.
             // Since we always want task inputs for a binary logger, set it to diagnostic.
             verbosity = LoggerVerbosity.Diagnostic;
 
-            loggers.Add(logger);
+            if (cpuCount == 1)
+            {
+                loggers.Add(logger);
+            }
+            else
+            {
+                Assembly engineAssembly = typeof(ProjectCollection).GetTypeInfo().Assembly;
+                string loggerClassName = "Microsoft.Build.Logging.BinaryLogger";
+                string loggerAssemblyName = engineAssembly.GetName().FullName;
+                LoggerDescription forwardingLoggerDescription = new LoggerDescription(loggerClassName, loggerAssemblyName, null, arguments, verbosity);
+
+                distributedLoggerRecords.Add(new DistributedLoggerRecord(logger, forwardingLoggerDescription));
+            }
         }
 
         /// <summary>

@@ -423,7 +423,7 @@ namespace Microsoft.Build.UnitTests
         {
             var memoryStream = new MemoryStream();
             var binaryWriter = new BinaryWriter(memoryStream);
-            var buildEventArgsWriter = new BuildEventArgsWriter(binaryWriter);
+            var buildEventArgsWriter = new BuildEventArgsWriter(binaryWriter, false);
 
             var args = new BuildStartedEventArgs(
                 "Message",
@@ -488,7 +488,7 @@ namespace Microsoft.Build.UnitTests
         {
             var memoryStream = new MemoryStream();
             var binaryWriter = new BinaryWriter(memoryStream);
-            var buildEventArgsWriter = new BuildEventArgsWriter(binaryWriter);
+            var buildEventArgsWriter = new BuildEventArgsWriter(binaryWriter, false);
 
             buildEventArgsWriter.Write(args);
 

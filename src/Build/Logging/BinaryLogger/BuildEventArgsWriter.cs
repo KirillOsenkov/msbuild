@@ -13,15 +13,17 @@ namespace Microsoft.Build.Logging
     /// </summary>
     internal class BuildEventArgsWriter
     {
-        private readonly BinaryWriter binaryWriter;
+        private readonly BinaryWriter _binaryWriter;
+        private readonly bool _splitLog;
 
         /// <summary>
         /// Initializes a new instance of BuildEventArgsWriter with a BinaryWriter
         /// </summary>
         /// <param name="binaryWriter">A BinaryWriter to write the BuildEventArgs instances to</param>
-        public BuildEventArgsWriter(BinaryWriter binaryWriter)
+        public BuildEventArgsWriter(BinaryWriter binaryWriter, bool splitLog)
         {
-            this.binaryWriter = binaryWriter;
+            _binaryWriter = binaryWriter;
+            _splitLog = splitLog;
         }
 
         /// <summary>
@@ -30,70 +32,59 @@ namespace Microsoft.Build.Logging
         public void Write(BuildEventArgs e)
         {
             // the cases are ordered by most used first for performance
-            if (e is BuildMessageEventArgs)
+            switch (e)
             {
-                Write((BuildMessageEventArgs)e);
-            }
-            else if (e is TaskStartedEventArgs)
-            {
-                Write((TaskStartedEventArgs)e);
-            }
-            else if (e is TaskFinishedEventArgs)
-            {
-                Write((TaskFinishedEventArgs)e);
-            }
-            else if (e is TargetStartedEventArgs)
-            {
-                Write((TargetStartedEventArgs)e);
-            }
-            else if (e is TargetFinishedEventArgs)
-            {
-                Write((TargetFinishedEventArgs)e);
-            }
-            else if (e is BuildErrorEventArgs)
-            {
-                Write((BuildErrorEventArgs)e);
-            }
-            else if (e is BuildWarningEventArgs)
-            {
-                Write((BuildWarningEventArgs)e);
-            }
-            else if (e is ProjectStartedEventArgs)
-            {
-                Write((ProjectStartedEventArgs)e);
-            }
-            else if (e is ProjectFinishedEventArgs)
-            {
-                Write((ProjectFinishedEventArgs)e);
-            }
-            else if (e is BuildStartedEventArgs)
-            {
-                Write((BuildStartedEventArgs)e);
-            }
-            else if (e is BuildFinishedEventArgs)
-            {
-                Write((BuildFinishedEventArgs)e);
-            }
-            else if (e is ProjectEvaluationStartedEventArgs)
-            {
-                Write((ProjectEvaluationStartedEventArgs)e);
-            }
-            else if (e is ProjectEvaluationFinishedEventArgs)
-            {
-                Write((ProjectEvaluationFinishedEventArgs)e);
-            }
-            else
-            {
-                // convert all unrecognized objects to message
-                // and just preserve the message
-                var buildMessageEventArgs = new BuildMessageEventArgs(
-                    e.Message,
-                    e.HelpKeyword,
-                    e.SenderName,
-                    MessageImportance.Normal,
-                    e.Timestamp);
-                buildMessageEventArgs.BuildEventContext = e.BuildEventContext ?? BuildEventContext.Invalid;
-                Write(buildMessageEventArgs);
+                case BuildMessageEventArgs args:
+                    Write(args);
+                    break;
+                case TaskStartedEventArgs eventArgs:
+                    Write(eventArgs);
+                    break;
+                case TaskFinishedEventArgs finishedEventArgs:
+                    Write(finishedEventArgs);
+                    break;
+                case TargetStartedEventArgs startedEventArgs:
+                    Write(startedEventArgs);
+                    break;
+                case TargetFinishedEventArgs targetFinishedEventArgs:
+                    Write(targetFinishedEventArgs);
+                    break;
+                case BuildErrorEventArgs errorEventArgs:
+                    Write(errorEventArgs);
+                    break;
+                case BuildWarningEventArgs warningEventArgs:
+                    Write(warningEventArgs);
+                    break;
+                case ProjectStartedEventArgs projectStartedEventArgs:
+                    Write(projectStartedEventArgs);
+                    break;
+                case ProjectFinishedEventArgs projectFinishedEventArgs:
+                    Write(projectFinishedEventArgs);
+                    break;
+                case BuildStartedEventArgs buildStartedEventArgs:
+                    Write(buildStartedEventArgs);
+                    break;
+                case BuildFinishedEventArgs buildFinishedEventArgs:
+                    Write(buildFinishedEventArgs);
+                    break;
+                case ProjectEvaluationStartedEventArgs evaluationStartedEventArgs:
+                    Write(evaluationStartedEventArgs);
+                    break;
+                case ProjectEvaluationFinishedEventArgs evaluationFinishedEventArgs:
+                    Write(evaluationFinishedEventArgs);
+                    break;
+                default:
+                    // convert all unrecognized objects to message
+                    // and just preserve the message
+                    var buildMessageEventArgs = new BuildMessageEventArgs(
+                        e.Message,
+                        e.HelpKeyword,
+                        e.SenderName,
+                        MessageImportance.Normal,
+                        e.Timestamp);
+                    buildMessageEventArgs.BuildEventContext = e.BuildEventContext ?? BuildEventContext.Invalid;
+                    Write(buildMessageEventArgs);
+                    break;
             }
         }
 
@@ -260,27 +251,27 @@ namespace Microsoft.Build.Logging
 
         private void Write(BuildMessageEventArgs e)
         {
-            if (e is CriticalBuildMessageEventArgs)
+            if (e is CriticalBuildMessageEventArgs args)
             {
-                Write((CriticalBuildMessageEventArgs)e);
+                Write(args);
                 return;
             }
 
-            if (e is TaskCommandLineEventArgs)
+            if (e is TaskCommandLineEventArgs eventArgs)
             {
-                Write((TaskCommandLineEventArgs)e);
+                Write(eventArgs);
                 return;
             }
 
-            if (e is ProjectImportedEventArgs)
+            if (e is ProjectImportedEventArgs importedEventArgs)
             {
-                Write((ProjectImportedEventArgs)e);
+                Write(importedEventArgs);
                 return;
             }
 
-            if (e is TargetSkippedEventArgs)
+            if (e is TargetSkippedEventArgs skippedEventArgs)
             {
-                Write((TargetSkippedEventArgs)e);
+                Write(skippedEventArgs);
                 return;
             }
 
@@ -323,7 +314,13 @@ namespace Microsoft.Build.Logging
 
         private void WriteBuildEventArgsFields(BuildEventArgs e)
         {
-            var flags = GetBuildEventArgsFieldFlags(e);
+            if (_splitLog)
+            {
+                Write(e.Timestamp);
+            }
+
+            var flags = GetBuildEventArgsFieldFlags(e, !_splitLog);
+
             Write((int)flags);
             WriteBaseFields(e, flags);
         }
@@ -363,7 +360,7 @@ namespace Microsoft.Build.Logging
 
         private void WriteMessageFields(BuildMessageEventArgs e)
         {
-            var flags = GetBuildEventArgsFieldFlags(e);
+            var flags = GetBuildEventArgsFieldFlags(e, !_splitLog);
             flags = GetMessageFlags(e, flags);
 
             Write((int)flags);
@@ -458,7 +455,7 @@ namespace Microsoft.Build.Logging
             return flags;
         }
 
-        private static BuildEventArgsFieldFlags GetBuildEventArgsFieldFlags(BuildEventArgs e)
+        private static BuildEventArgsFieldFlags GetBuildEventArgsFieldFlags(BuildEventArgs e, bool writeTimestamp)
         {
             var flags = BuildEventArgsFieldFlags.None;
             if (e.BuildEventContext != null)
@@ -487,7 +484,7 @@ namespace Microsoft.Build.Logging
                 flags |= BuildEventArgsFieldFlags.ThreadId;
             }
 
-            if (e.Timestamp != default(DateTime))
+            if (writeTimestamp && e.Timestamp != default(DateTime))
             {
                 flags |= BuildEventArgsFieldFlags.Timestamp;
             }
@@ -613,12 +610,12 @@ namespace Microsoft.Build.Logging
 
         private void Write(int value)
         {
-            Write7BitEncodedInt(binaryWriter, value);
+            Write7BitEncodedInt(_binaryWriter, value);
         }
 
         private void Write(long value)
         {
-            binaryWriter.Write(value);
+            _binaryWriter.Write(value);
         }
 
         private void Write7BitEncodedInt(BinaryWriter writer, int value)
@@ -636,23 +633,23 @@ namespace Microsoft.Build.Logging
 
         private void Write(byte[] bytes)
         {
-            binaryWriter.Write(bytes);
+            _binaryWriter.Write(bytes);
         }
 
         private void Write(bool boolean)
         {
-            binaryWriter.Write(boolean);
+            _binaryWriter.Write(boolean);
         }
 
         private void Write(string text)
         {
             if (text != null)
             {
-                binaryWriter.Write(text);
+                _binaryWriter.Write(text);
             }
             else
             {
-                binaryWriter.Write(false);
+                _binaryWriter.Write(false);
             }
         }
 
@@ -671,13 +668,13 @@ namespace Microsoft.Build.Logging
 
         private void Write(DateTime timestamp)
         {
-            binaryWriter.Write(timestamp.Ticks);
+            _binaryWriter.Write(timestamp.Ticks);
             Write((int)timestamp.Kind);
         }
 
         private void Write(TimeSpan timeSpan)
         {
-            binaryWriter.Write(timeSpan.Ticks);
+            _binaryWriter.Write(timeSpan.Ticks);
         }
 
         private void Write(EvaluationLocation item)
